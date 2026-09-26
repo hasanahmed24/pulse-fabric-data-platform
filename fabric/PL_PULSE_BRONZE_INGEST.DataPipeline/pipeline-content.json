@@ -1,5 +1,1206 @@
 {
   "properties": {
-    "activities": []
+    "activities": [
+      {
+        "name": "LKP_ACTIVE_ENTITIES",
+        "type": "Lookup",
+        "dependsOn": [
+          {
+            "activity": "SCR_LOG_PIPELINE_START",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ],
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureOutput": false,
+          "secureInput": false
+        },
+        "typeProperties": {
+          "source": {
+            "type": "DataWarehouseSource",
+            "sqlReaderQuery": "SELECT\n    EntityName,\n    SourceSchema,\n    SourceTable,\n    TargetTable,\n    LoadType,\n    WatermarkColumn,\n    WatermarkDataType,\n    BusinessDateColumn,\n    LookbackDays,\n    UpsertKeyColumn,\n    LoadOrder\nFROM ctl.IngestionConfig\nWHERE IsActive = 1\nORDER BY LoadOrder",
+            "queryTimeout": "02:00:00",
+            "partitionOption": "None"
+          },
+          "firstRowOnly": false,
+          "datasetSettings": {
+            "annotations": [],
+            "connectionSettings": {
+              "name": "23397ec1_1e23_4b6d_a127_24b5f750a10f",
+              "properties": {
+                "annotations": [],
+                "type": "DataWarehouse",
+                "typeProperties": {
+                  "endpoint": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouseSqlEndpoint",
+                  "artifactId": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouse.itemId",
+                  "workspaceId": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouse.workspaceId"
+                },
+                "externalReferences": {
+                  "connection": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouseConnectionId"
+                }
+              }
+            },
+            "type": "DataWarehouseTable",
+            "schema": [],
+            "typeProperties": {}
+          }
+        }
+      },
+      {
+        "name": "FE_INGEST_TABLES",
+        "type": "ForEach",
+        "dependsOn": [
+          {
+            "activity": "LKP_ACTIVE_ENTITIES",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ],
+        "typeProperties": {
+          "items": {
+            "value": "@activity('LKP_ACTIVE_ENTITIES').output.value",
+            "type": "Expression"
+          },
+          "isSequential": true,
+          "activities": [
+            {
+              "name": "IF_INCREMENTAL",
+              "type": "IfCondition",
+              "dependsOn": [
+                {
+                  "activity": "SCR_LOG_TABLE_START",
+                  "dependencyConditions": [
+                    "Succeeded"
+                  ]
+                }
+              ],
+              "typeProperties": {
+                "expression": {
+                  "value": "@equals(item().LoadType, 'INCREMENTAL')",
+                  "type": "Expression"
+                },
+                "ifFalseActivities": [
+                  {
+                    "name": "CPY_SNAPSHOT_TO_BRONZE",
+                    "type": "Copy",
+                    "dependsOn": [
+                      {
+                        "activity": "LKP_SNAPSHOT_SOURCE_COUNT",
+                        "dependencyConditions": [
+                          "Succeeded"
+                        ]
+                      }
+                    ],
+                    "policy": {
+                      "timeout": "0.12:00:00",
+                      "retry": 0,
+                      "retryIntervalInSeconds": 30,
+                      "secureOutput": false,
+                      "secureInput": false
+                    },
+                    "typeProperties": {
+                      "source": {
+                        "type": "SqlServerSource",
+                        "sqlReaderQuery": {
+                          "value": "@concat('select * from [',item().SourceSchema,'].[',item().SourceTable,']')",
+                          "type": "Expression"
+                        },
+                        "queryTimeout": "02:00:00",
+                        "partitionOption": "None",
+                        "datasetSettings": {
+                          "annotations": [],
+                          "type": "SqlServerTable",
+                          "schema": [],
+                          "typeProperties": {
+                            "database": "PULSE"
+                          },
+                          "externalReferences": {
+                            "connection": "@pipeline().libraryVariables.VL_PULSE_CONFIG_SourceConnection"
+                          }
+                        }
+                      },
+                      "sink": {
+                        "type": "LakehouseTableSink",
+                        "tableActionOption": "OverwriteSchema",
+                        "partitionOption": "None",
+                        "applyVOrder": false,
+                        "enableTimestampNtz": false,
+                        "datasetSettings": {
+                          "annotations": [],
+                          "connectionSettings": {
+                            "name": "c89b4d25_03be_4e1d_b2ac_4e712af9e138",
+                            "properties": {
+                              "annotations": [],
+                              "type": "Lakehouse",
+                              "typeProperties": {
+                                "workspaceId": "@pipeline().libraryVariables.VL_PULSE_CONFIG_BronzeLakehouse.workspaceId",
+                                "artifactId": "@pipeline().libraryVariables.VL_PULSE_CONFIG_BronzeLakehouse.itemId",
+                                "rootFolder": "Tables"
+                              },
+                              "externalReferences": {
+                                "connection": "@pipeline().libraryVariables.VL_PULSE_CONFIG_BronzeLakehouseConnectionId"
+                              }
+                            }
+                          },
+                          "type": "LakehouseTable",
+                          "schema": [],
+                          "typeProperties": {
+                            "schema": "dbo",
+                            "table": {
+                              "value": "@item().TargetTable",
+                              "type": "Expression"
+                            }
+                          }
+                        }
+                      },
+                      "enableStaging": false,
+                      "translator": {
+                        "type": "TabularTranslator",
+                        "typeConversion": true,
+                        "typeConversionSettings": {
+                          "allowDataTruncation": true,
+                          "treatBooleanAsNumber": false
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "name": "LKP_SNAPSHOT_SOURCE_COUNT",
+                    "type": "Lookup",
+                    "dependsOn": [],
+                    "policy": {
+                      "timeout": "0.12:00:00",
+                      "retry": 0,
+                      "retryIntervalInSeconds": 30,
+                      "secureOutput": false,
+                      "secureInput": false
+                    },
+                    "typeProperties": {
+                      "source": {
+                        "type": "SqlServerSource",
+                        "sqlReaderQuery": {
+                          "value": "@concat(\n'SELECT COUNT_BIG(*) AS SourceRowCount FROM [',\nitem().SourceSchema,\n'].[',\nitem().SourceTable,\n']'\n)",
+                          "type": "Expression"
+                        },
+                        "queryTimeout": "02:00:00",
+                        "partitionOption": "None"
+                      },
+                      "datasetSettings": {
+                        "annotations": [],
+                        "type": "SqlServerTable",
+                        "schema": [],
+                        "typeProperties": {
+                          "database": "PULSE"
+                        },
+                        "externalReferences": {
+                          "connection": "@pipeline().libraryVariables.VL_PULSE_CONFIG_SourceConnection"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "name": "LKP_SNAPSHOT_TARGET_COUNT",
+                    "type": "Lookup",
+                    "dependsOn": [
+                      {
+                        "activity": "WEB_REFRESH_BRONZE_SQL_SNAPSHOT",
+                        "dependencyConditions": [
+                          "Succeeded"
+                        ]
+                      }
+                    ],
+                    "policy": {
+                      "timeout": "0.12:00:00",
+                      "retry": 0,
+                      "retryIntervalInSeconds": 30,
+                      "secureOutput": false,
+                      "secureInput": false
+                    },
+                    "typeProperties": {
+                      "source": {
+                        "type": "LakehouseTableSource",
+                        "sqlReaderQuery": {
+                          "value": "@concat(\n'SELECT COUNT_BIG(*) AS TargetRowCount FROM [dbo].[',\nitem().TargetTable,\n']'\n)",
+                          "type": "Expression"
+                        },
+                        "partitionOption": "None"
+                      },
+                      "datasetSettings": {
+                        "annotations": [],
+                        "connectionSettings": {
+                          "name": "f27c833e_683e_4896_806c_fe5ab0d95dd6",
+                          "properties": {
+                            "annotations": [],
+                            "type": "Lakehouse",
+                            "typeProperties": {
+                              "workspaceId": "@pipeline().libraryVariables.VL_PULSE_CONFIG_BronzeLakehouse.workspaceId",
+                              "artifactId": "@pipeline().libraryVariables.VL_PULSE_CONFIG_BronzeLakehouse.itemId",
+                              "rootFolder": "Tables"
+                            },
+                            "externalReferences": {
+                              "connection": "@pipeline().libraryVariables.VL_PULSE_CONFIG_BronzeLakehouseConnectionId"
+                            }
+                          }
+                        },
+                        "type": "LakehouseTable",
+                        "schema": [],
+                        "typeProperties": {}
+                      }
+                    }
+                  },
+                  {
+                    "name": "SCR_VALIDATE_SNAPSHOT",
+                    "type": "Script",
+                    "dependsOn": [
+                      {
+                        "activity": "LKP_SNAPSHOT_TARGET_COUNT",
+                        "dependencyConditions": [
+                          "Succeeded"
+                        ]
+                      }
+                    ],
+                    "policy": {
+                      "timeout": "0.12:00:00",
+                      "retry": 0,
+                      "retryIntervalInSeconds": 30,
+                      "secureOutput": false,
+                      "secureInput": false
+                    },
+                    "connectionSettings": {
+                      "name": "71a08ae8_ef1a_4b7d_90b4_f0428e4282ad",
+                      "properties": {
+                        "annotations": [],
+                        "type": "DataWarehouse",
+                        "typeProperties": {
+                          "endpoint": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouseSqlEndpoint",
+                          "artifactId": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouse.itemId",
+                          "workspaceId": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouse.workspaceId"
+                        },
+                        "externalReferences": {
+                          "connection": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouseConnectionId"
+                        }
+                      }
+                    },
+                    "typeProperties": {
+                      "scripts": [
+                        {
+                          "type": "NonQuery",
+                          "text": {
+                            "value": "@concat(\n'\nDECLARE @SourceCount BIGINT = ',\nactivity('LKP_SNAPSHOT_SOURCE_COUNT').output.firstRow.SourceRowCount,\n';\n\nDECLARE @RowsRead BIGINT = ',\nactivity('CPY_SNAPSHOT_TO_BRONZE').output.rowsRead,\n';\n\nDECLARE @TargetCount BIGINT = ',\nactivity('LKP_SNAPSHOT_TARGET_COUNT').output.firstRow.TargetRowCount,\n';\n\nIF @SourceCount = @RowsRead\n   AND @SourceCount = @TargetCount\nBEGIN\n\n    UPDATE audit.TableRun\n    SET\n        EndTime = SYSUTCDATETIME(),\n        SourceRowCount = @SourceCount,\n        RowsRead = @RowsRead,\n        RowsWritten = @RowsRead,\n        TargetRowCount = @TargetCount,\n        RowsRejected = 0,\n        Status = ''SUCCESS'',\n        ErrorMessage = NULL\n    WHERE PipelineRunId = ''',\npipeline().RunId,\n'''\n      AND EntityName = ''',\nitem().EntityName,\n''';\n\nEND\nELSE\nBEGIN\n\n    UPDATE audit.TableRun\n    SET\n        EndTime = SYSUTCDATETIME(),\n        SourceRowCount = @SourceCount,\n        RowsRead = @RowsRead,\n        RowsWritten = @RowsRead,\n        TargetRowCount = @TargetCount,\n        Status = ''FAILED'',\n        ErrorMessage = ''Snapshot source/target reconciliation failed''\n    WHERE PipelineRunId = ''',\npipeline().RunId,\n'''\n      AND EntityName = ''',\nitem().EntityName,\n''';\n\n    THROW 50001, ''Snapshot source/target reconciliation failed'', 1;\n\nEND;\n'\n)",
+                            "type": "Expression"
+                          }
+                        }
+                      ],
+                      "scriptBlockExecutionTimeout": "02:00:00"
+                    }
+                  },
+                  {
+                    "name": "REFRESH_BRONZE_SQL_ENDPOINT",
+                    "type": "RefreshSqlEndpoint",
+                    "state": "Inactive",
+                    "onInactiveMarkAs": "Succeeded",
+                    "dependsOn": [],
+                    "policy": {
+                      "timeout": "0.12:00:00",
+                      "retry": 0,
+                      "retryIntervalInSeconds": 30,
+                      "secureOutput": false,
+                      "secureInput": false
+                    },
+                    "typeProperties": {
+                      "sqlEndpointId": "1f5af132-8e35-4a49-919d-04c4b0d9c385",
+                      "workspaceId": "f2828d93-f046-4cac-9029-54ad77375da3",
+                      "recreateTables": false
+                    },
+                    "externalReferences": {
+                      "connection": "@pipeline().libraryVariables.VL_PULSE_CONFIG_BronzeLakehouseConnectionId"
+                    }
+                  },
+                  {
+                    "name": "WEB_REFRESH_BRONZE_SQL_SNAPSHOT",
+                    "type": "WebActivity",
+                    "dependsOn": [
+                      {
+                        "activity": "CPY_SNAPSHOT_TO_BRONZE",
+                        "dependencyConditions": [
+                          "Succeeded"
+                        ]
+                      }
+                    ],
+                    "policy": {
+                      "timeout": "0.12:00:00",
+                      "retry": 0,
+                      "retryIntervalInSeconds": 30,
+                      "secureOutput": false,
+                      "secureInput": false
+                    },
+                    "typeProperties": {
+                      "method": "POST",
+                      "headers": {
+                        "Content-Type": "application/json"
+                      },
+                      "relativeUrl": {
+                        "value": "@concat(\n    'v1/workspaces/',\n    pipeline().libraryVariables.VL_PULSE_CONFIG_BronzeWorkspaceId,\n    '/sqlEndpoints/',\n    pipeline().libraryVariables.VL_PULSE_CONFIG_BronzeSqlEndpointId,\n    '/refreshMetadata'\n)",
+                        "type": "Expression"
+                      },
+                      "body": {
+                        "value": "@concat(\n    '{\"recreateTables\":false,\"tables\":[{\"schema\":\"dbo\",\"tableNames\":[\"',\n    item().TargetTable,\n    '\"]}]}'\n)",
+                        "type": "Expression"
+                      }
+                    },
+                    "externalReferences": {
+                      "connection": "@pipeline().libraryVariables.VL_PULSE_CONFIG_CON_FABRIC_API_DEV"
+                    }
+                  }
+                ],
+                "ifTrueActivities": [
+                  {
+                    "name": "LKP_PREVIOUS_WATERMARK",
+                    "type": "Lookup",
+                    "dependsOn": [],
+                    "policy": {
+                      "timeout": "0.12:00:00",
+                      "retry": 0,
+                      "retryIntervalInSeconds": 30,
+                      "secureOutput": false,
+                      "secureInput": false
+                    },
+                    "typeProperties": {
+                      "source": {
+                        "type": "DataWarehouseSource",
+                        "sqlReaderQuery": {
+                          "value": "@concat('select EntityName, LastSuccessfulWatermark from ctl.Watermark where EntityName = ''',item().EntityName,\n'''')",
+                          "type": "Expression"
+                        },
+                        "queryTimeout": "02:00:00",
+                        "partitionOption": "None"
+                      },
+                      "datasetSettings": {
+                        "annotations": [],
+                        "connectionSettings": {
+                          "name": "9eaa2ed7_5ffe_47a7_9afe_1426fe5926be",
+                          "properties": {
+                            "annotations": [],
+                            "type": "DataWarehouse",
+                            "typeProperties": {
+                              "endpoint": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouseSqlEndpoint",
+                              "artifactId": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouse.itemId",
+                              "workspaceId": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouse.workspaceId"
+                            },
+                            "externalReferences": {
+                              "connection": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouseConnectionId"
+                            }
+                          }
+                        },
+                        "type": "DataWarehouseTable",
+                        "schema": [],
+                        "typeProperties": {}
+                      }
+                    }
+                  },
+                  {
+                    "name": "LKP_CURRENT_HIGH_WATERMARK",
+                    "type": "Lookup",
+                    "dependsOn": [
+                      {
+                        "activity": "LKP_PREVIOUS_WATERMARK",
+                        "dependencyConditions": [
+                          "Succeeded"
+                        ]
+                      }
+                    ],
+                    "policy": {
+                      "timeout": "0.12:00:00",
+                      "retry": 0,
+                      "retryIntervalInSeconds": 30,
+                      "secureOutput": false,
+                      "secureInput": false
+                    },
+                    "typeProperties": {
+                      "source": {
+                        "type": "SqlServerSource",
+                        "sqlReaderQuery": {
+                          "value": "@concat('select max([',item().WatermarkColumn,']) as CurrentHighWatermark from [',item().SourceSchema,'].[',item().SourceTable,']')",
+                          "type": "Expression"
+                        },
+                        "queryTimeout": "02:00:00",
+                        "partitionOption": "None"
+                      },
+                      "datasetSettings": {
+                        "annotations": [],
+                        "type": "SqlServerTable",
+                        "schema": [],
+                        "typeProperties": {
+                          "database": "PULSE"
+                        },
+                        "externalReferences": {
+                          "connection": "@pipeline().libraryVariables.VL_PULSE_CONFIG_SourceConnection"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "name": "LKP_SOURCE_COUNT",
+                    "type": "Lookup",
+                    "dependsOn": [
+                      {
+                        "activity": "LKP_CURRENT_HIGH_WATERMARK",
+                        "dependencyConditions": [
+                          "Succeeded"
+                        ]
+                      }
+                    ],
+                    "policy": {
+                      "timeout": "0.12:00:00",
+                      "retry": 0,
+                      "retryIntervalInSeconds": 30,
+                      "secureOutput": false,
+                      "secureInput": false
+                    },
+                    "typeProperties": {
+                      "source": {
+                        "type": "SqlServerSource",
+                        "sqlReaderQuery": {
+                          "value": "@concat('select count_big(*) as SourceRowCount from [',item().SourceSchema,'].[',item().SourceTable,'] where [',item().WatermarkColumn,'] > ',activity('LKP_PREVIOUS_WATERMARK').output.firstRow.LastSuccessfulWatermark,'AND [',item().WatermarkColumn,'] <= ',activity('LKP_CURRENT_HIGH_WATERMARK').output.firstRow.CurrentHighWatermark)",
+                          "type": "Expression"
+                        },
+                        "queryTimeout": "02:00:00",
+                        "partitionOption": "None"
+                      },
+                      "datasetSettings": {
+                        "annotations": [],
+                        "type": "SqlServerTable",
+                        "schema": [],
+                        "typeProperties": {
+                          "database": "PULSE"
+                        },
+                        "externalReferences": {
+                          "connection": "@pipeline().libraryVariables.VL_PULSE_CONFIG_SourceConnection"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "name": "CPY_INCREMENTAL_TO_BRONZE",
+                    "type": "Copy",
+                    "dependsOn": [
+                      {
+                        "activity": "LKP_SOURCE_COUNT",
+                        "dependencyConditions": [
+                          "Succeeded"
+                        ]
+                      }
+                    ],
+                    "policy": {
+                      "timeout": "0.12:00:00",
+                      "retry": 0,
+                      "retryIntervalInSeconds": 30,
+                      "secureOutput": false,
+                      "secureInput": false
+                    },
+                    "typeProperties": {
+                      "source": {
+                        "type": "SqlServerSource",
+                        "sqlReaderQuery": {
+                          "value": "@concat(\n    'SELECT * FROM [',\n    item().SourceSchema,\n    '].[',\n    item().SourceTable,\n    '] WHERE [',\n    item().WatermarkColumn,\n    '] > ',\n    activity('LKP_PREVIOUS_WATERMARK').output.firstRow.LastSuccessfulWatermark,\n    ' AND [',\n    item().WatermarkColumn,\n    '] <= ',\n    activity('LKP_CURRENT_HIGH_WATERMARK').output.firstRow.CurrentHighWatermark\n)",
+                          "type": "Expression"
+                        },
+                        "queryTimeout": "02:00:00",
+                        "partitionOption": "None",
+                        "datasetSettings": {
+                          "annotations": [],
+                          "type": "SqlServerTable",
+                          "schema": [],
+                          "typeProperties": {
+                            "database": "PULSE"
+                          },
+                          "externalReferences": {
+                            "connection": "@pipeline().libraryVariables.VL_PULSE_CONFIG_SourceConnection"
+                          }
+                        }
+                      },
+                      "sink": {
+                        "type": "LakehouseTableSink",
+                        "tableActionOption": "Upsert",
+                        "upsertSettings": {
+                          "keys": {
+                            "value": "@array(item().UpsertKeyColumn)",
+                            "type": "Expression"
+                          }
+                        },
+                        "applyVOrder": false,
+                        "enableTimestampNtz": false,
+                        "datasetSettings": {
+                          "annotations": [],
+                          "connectionSettings": {
+                            "name": "59fe21e3_31c5_4f39_ab29_dd52a74b2c23",
+                            "properties": {
+                              "annotations": [],
+                              "type": "Lakehouse",
+                              "typeProperties": {
+                                "workspaceId": "@pipeline().libraryVariables.VL_PULSE_CONFIG_BronzeLakehouse.workspaceId",
+                                "artifactId": "@pipeline().libraryVariables.VL_PULSE_CONFIG_BronzeLakehouse.itemId",
+                                "rootFolder": "Tables"
+                              },
+                              "externalReferences": {
+                                "connection": "@pipeline().libraryVariables.VL_PULSE_CONFIG_BronzeLakehouseConnectionId"
+                              }
+                            }
+                          },
+                          "type": "LakehouseTable",
+                          "schema": [],
+                          "typeProperties": {
+                            "schema": "dbo",
+                            "table": {
+                              "value": "@item().TargetTable",
+                              "type": "Expression"
+                            }
+                          }
+                        }
+                      },
+                      "enableStaging": false,
+                      "translator": {
+                        "type": "TabularTranslator",
+                        "typeConversion": true,
+                        "typeConversionSettings": {
+                          "allowDataTruncation": true,
+                          "treatBooleanAsNumber": false
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "name": "LKP_INCREMENTAL_TARGET_COUNT",
+                    "type": "Lookup",
+                    "dependsOn": [
+                      {
+                        "activity": "WEB_REFRESH_BRONZE_SQL_ENDPOINT",
+                        "dependencyConditions": [
+                          "Succeeded"
+                        ]
+                      }
+                    ],
+                    "policy": {
+                      "timeout": "0.12:00:00",
+                      "retry": 0,
+                      "retryIntervalInSeconds": 30,
+                      "secureOutput": false,
+                      "secureInput": false
+                    },
+                    "typeProperties": {
+                      "source": {
+                        "type": "LakehouseTableSource",
+                        "sqlReaderQuery": {
+                          "value": "@concat(\n    'SELECT COUNT_BIG(*) AS TargetRowCount FROM [dbo].[',\n    item().TargetTable,\n    '] WHERE [',\n    item().WatermarkColumn,\n    '] > ',\n    activity('LKP_PREVIOUS_WATERMARK').output.firstRow.LastSuccessfulWatermark,\n    ' AND [',\n    item().WatermarkColumn,\n    '] <= ',\n    activity('LKP_CURRENT_HIGH_WATERMARK').output.firstRow.CurrentHighWatermark\n)",
+                          "type": "Expression"
+                        },
+                        "partitionOption": "None"
+                      },
+                      "datasetSettings": {
+                        "annotations": [],
+                        "connectionSettings": {
+                          "name": "82075251_ad78_4189_8255_f2b4129be5bf",
+                          "properties": {
+                            "annotations": [],
+                            "type": "Lakehouse",
+                            "typeProperties": {
+                              "workspaceId": "@pipeline().libraryVariables.VL_PULSE_CONFIG_BronzeLakehouse.workspaceId",
+                              "artifactId": "@pipeline().libraryVariables.VL_PULSE_CONFIG_BronzeLakehouse.itemId",
+                              "rootFolder": "Tables"
+                            },
+                            "externalReferences": {
+                              "connection": "@pipeline().libraryVariables.VL_PULSE_CONFIG_BronzeLakehouseConnectionId"
+                            }
+                          }
+                        },
+                        "type": "LakehouseTable",
+                        "schema": [],
+                        "typeProperties": {}
+                      }
+                    }
+                  },
+                  {
+                    "name": "SCR_VALIDATE_INCREMENTAL",
+                    "type": "Script",
+                    "dependsOn": [
+                      {
+                        "activity": "LKP_INCREMENTAL_TARGET_COUNT",
+                        "dependencyConditions": [
+                          "Succeeded"
+                        ]
+                      }
+                    ],
+                    "policy": {
+                      "timeout": "0.12:00:00",
+                      "retry": 0,
+                      "retryIntervalInSeconds": 30,
+                      "secureOutput": false,
+                      "secureInput": false
+                    },
+                    "connectionSettings": {
+                      "name": "e85c6c52_954c_44c2_b419_379b360930ba",
+                      "properties": {
+                        "annotations": [],
+                        "type": "DataWarehouse",
+                        "typeProperties": {
+                          "endpoint": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouseSqlEndpoint",
+                          "artifactId": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouse.itemId",
+                          "workspaceId": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouse.workspaceId"
+                        },
+                        "externalReferences": {
+                          "connection": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouseConnectionId"
+                        }
+                      }
+                    },
+                    "typeProperties": {
+                      "scripts": [
+                        {
+                          "type": "NonQuery",
+                          "text": {
+                            "value": "@concat(\n'\nDECLARE @SourceCount BIGINT = ',\nactivity('LKP_SOURCE_COUNT').output.firstRow.SourceRowCount,\n';\n\nDECLARE @RowsRead BIGINT = ',\nactivity('CPY_INCREMENTAL_TO_BRONZE').output.rowsRead,\n';\n\nDECLARE @RowsWritten BIGINT = ',\nactivity('CPY_INCREMENTAL_TO_BRONZE').output.rowsCopied,\n';\n\nDECLARE @TargetCount BIGINT = ',\nactivity('LKP_INCREMENTAL_TARGET_COUNT').output.firstRow.TargetRowCount,\n';\n\nDECLARE @StartWatermark VARCHAR(200) = ''',\nactivity('LKP_PREVIOUS_WATERMARK').output.firstRow.LastSuccessfulWatermark,\n''';\n\nDECLARE @EndWatermark VARCHAR(200) = ''',\nactivity('LKP_CURRENT_HIGH_WATERMARK').output.firstRow.CurrentHighWatermark,\n''';\n\nIF @SourceCount = @RowsRead\n   AND @SourceCount = @RowsWritten\n   AND @SourceCount = @TargetCount\nBEGIN\n\n    UPDATE audit.TableRun\n    SET\n        EndTime = SYSUTCDATETIME(),\n        StartWatermark = @StartWatermark,\n        EndWatermark = @EndWatermark,\n        SourceRowCount = @SourceCount,\n        RowsRead = @RowsRead,\n        RowsWritten = @RowsWritten,\n        TargetRowCount = @TargetCount,\n        RowsRejected = 0,\n        Status = ''SUCCESS'',\n        ErrorMessage = NULL\n    WHERE PipelineRunId = ''',\npipeline().RunId,\n'''\n      AND EntityName = ''',\nitem().EntityName,\n''';\n\n    UPDATE ctl.Watermark\n    SET\n        LastSuccessfulWatermark = @EndWatermark,\n        LastSuccessfulRunId = ''',\npipeline().RunId,\n''',\n        UpdatedAt = SYSUTCDATETIME()\n    WHERE EntityName = ''',\nitem().EntityName,\n''';\n\nEND\nELSE\nBEGIN\n\n    UPDATE audit.TableRun\n    SET\n        EndTime = SYSUTCDATETIME(),\n        StartWatermark = @StartWatermark,\n        EndWatermark = @EndWatermark,\n        SourceRowCount = @SourceCount,\n        RowsRead = @RowsRead,\n        RowsWritten = @RowsWritten,\n        TargetRowCount = @TargetCount,\n        RowsRejected =\n            CASE\n                WHEN @SourceCount > @RowsWritten\n                THEN @SourceCount - @RowsWritten\n                ELSE 0\n            END,\n        Status = ''FAILED'',\n        ErrorMessage = ''Incremental source/copy/target reconciliation failed''\n    WHERE PipelineRunId = ''',\npipeline().RunId,\n'''\n      AND EntityName = ''',\nitem().EntityName,\n''';\n\n    THROW 50002, ''Incremental source/copy/target reconciliation failed'', 1;\n\nEND;\n'\n)",
+                            "type": "Expression"
+                          }
+                        }
+                      ],
+                      "scriptBlockExecutionTimeout": "02:00:00"
+                    }
+                  },
+                  {
+                    "name": "REFRESH_BRONZE_SQL_ENDPOINT_INC",
+                    "type": "RefreshSqlEndpoint",
+                    "state": "Inactive",
+                    "onInactiveMarkAs": "Succeeded",
+                    "dependsOn": [],
+                    "policy": {
+                      "timeout": "0.12:00:00",
+                      "retry": 0,
+                      "retryIntervalInSeconds": 30,
+                      "secureOutput": false,
+                      "secureInput": false
+                    },
+                    "typeProperties": {
+                      "sqlEndpointId": "1f5af132-8e35-4a49-919d-04c4b0d9c385",
+                      "workspaceId": "f2828d93-f046-4cac-9029-54ad77375da3",
+                      "recreateTables": false
+                    },
+                    "externalReferences": {
+                      "connection": "@pipeline().libraryVariables.VL_PULSE_CONFIG_BronzeLakehouseConnectionId"
+                    }
+                  },
+                  {
+                    "name": "WEB_REFRESH_BRONZE_SQL_ENDPOINT",
+                    "type": "WebActivity",
+                    "dependsOn": [
+                      {
+                        "activity": "CPY_INCREMENTAL_TO_BRONZE",
+                        "dependencyConditions": [
+                          "Succeeded"
+                        ]
+                      }
+                    ],
+                    "policy": {
+                      "timeout": "0.12:00:00",
+                      "retry": 0,
+                      "retryIntervalInSeconds": 30,
+                      "secureOutput": false,
+                      "secureInput": false
+                    },
+                    "typeProperties": {
+                      "method": "POST",
+                      "headers": {
+                        "Content-Type": "application/json"
+                      },
+                      "relativeUrl": {
+                        "value": "@concat(\n    'v1/workspaces/',\n    pipeline().libraryVariables.VL_PULSE_CONFIG_BronzeWorkspaceId,\n    '/sqlEndpoints/',\n    pipeline().libraryVariables.VL_PULSE_CONFIG_BronzeSqlEndpointId,\n    '/refreshMetadata'\n)",
+                        "type": "Expression"
+                      },
+                      "body": {
+                        "value": "@concat(\n    '{\"recreateTables\":false,\"tables\":[{\"schema\":\"dbo\",\"tableNames\":[\"',\n    item().TargetTable,\n    '\"]}]}'\n)",
+                        "type": "Expression"
+                      }
+                    },
+                    "externalReferences": {
+                      "connection": "@pipeline().libraryVariables.VL_PULSE_CONFIG_CON_FABRIC_API_DEV"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "name": "SCR_LOG_TABLE_START",
+              "type": "Script",
+              "dependsOn": [],
+              "policy": {
+                "timeout": "0.12:00:00",
+                "retry": 0,
+                "retryIntervalInSeconds": 30,
+                "secureOutput": false,
+                "secureInput": false
+              },
+              "connectionSettings": {
+                "name": "4dc97f05_0270_466e_8104_f6facefec577",
+                "properties": {
+                  "annotations": [],
+                  "type": "DataWarehouse",
+                  "typeProperties": {
+                    "endpoint": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouseSqlEndpoint",
+                    "artifactId": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouse.itemId",
+                    "workspaceId": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouse.workspaceId"
+                  },
+                  "externalReferences": {
+                    "connection": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouseConnectionId"
+                  }
+                }
+              },
+              "typeProperties": {
+                "scripts": [
+                  {
+                    "type": "NonQuery",
+                    "text": {
+                      "value": "@concat(\n'INSERT INTO audit.TableRun\n(\n    PipelineRunId,\n    EntityName,\n    StartTime,\n    Status\n)\nVALUES\n(\n''', pipeline().RunId, ''',\n''', item().EntityName, ''',\nSYSUTCDATETIME(),\n''RUNNING''\n);'\n)",
+                      "type": "Expression"
+                    }
+                  }
+                ],
+                "scriptBlockExecutionTimeout": "02:00:00"
+              }
+            },
+            {
+              "name": "SCR_LOG_TABLE_FAILED",
+              "type": "Script",
+              "dependsOn": [
+                {
+                  "activity": "IF_INCREMENTAL",
+                  "dependencyConditions": [
+                    "Failed"
+                  ]
+                }
+              ],
+              "policy": {
+                "timeout": "0.12:00:00",
+                "retry": 0,
+                "retryIntervalInSeconds": 30,
+                "secureOutput": false,
+                "secureInput": false
+              },
+              "connectionSettings": {
+                "name": "071e1d32_33ae_4cc4_a4e2_d313a651925e",
+                "properties": {
+                  "annotations": [],
+                  "type": "DataWarehouse",
+                  "typeProperties": {
+                    "endpoint": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouseSqlEndpoint",
+                    "artifactId": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouse.itemId",
+                    "workspaceId": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouse.workspaceId"
+                  },
+                  "externalReferences": {
+                    "connection": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouseConnectionId"
+                  }
+                }
+              },
+              "typeProperties": {
+                "scripts": [
+                  {
+                    "type": "NonQuery",
+                    "text": {
+                      "value": "@concat(\n'\nUPDATE audit.TableRun\nSET\n    EndTime = SYSUTCDATETIME(),\n    Status = ''FAILED'',\n    ErrorMessage = ''One or more activities failed while processing entity: ',\nreplace(item().EntityName,'''',''''''),\n'''\nWHERE PipelineRunId = ''',\npipeline().RunId,\n'''\n  AND EntityName = ''',\nreplace(item().EntityName,'''',''''''),\n''';\n'\n)",
+                      "type": "Expression"
+                    }
+                  }
+                ],
+                "scriptBlockExecutionTimeout": "02:00:00"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "name": "SCR_LOG_PIPELINE_START",
+        "type": "Script",
+        "dependsOn": [],
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureOutput": false,
+          "secureInput": false
+        },
+        "connectionSettings": {
+          "name": "64ea6c13_7ead_46ca_acc3_fe5a8b2d3075",
+          "properties": {
+            "annotations": [],
+            "type": "DataWarehouse",
+            "typeProperties": {
+              "endpoint": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouseSqlEndpoint",
+              "artifactId": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouse.itemId",
+              "workspaceId": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouse.workspaceId"
+            },
+            "externalReferences": {
+              "connection": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouseConnectionId"
+            }
+          }
+        },
+        "typeProperties": {
+          "scripts": [
+            {
+              "type": "NonQuery",
+              "text": {
+                "value": "@concat(\n'INSERT INTO audit.PipelineRun\n(\n    PipelineRunId,\n    PipelineName,\n    EnvironmentName,\n    StartTime,\n    EndTime,\n    Status,\n    ErrorActivity,\n    ErrorMessage\n)\nVALUES\n(\n''', pipeline().RunId, ''',\n''', pipeline().PipelineName, ''',\n''', pipeline().libraryVariables.VL_PULSE_CONFIG_EnvironmentName, ''',\nSYSUTCDATETIME(),\nNULL,\n''RUNNING'',\nNULL,\nNULL\n);'\n)",
+                "type": "Expression"
+              }
+            }
+          ],
+          "scriptBlockExecutionTimeout": "02:00:00"
+        }
+      },
+      {
+        "name": "SCR_LOG_PIPELINE_FAILED_INGEST",
+        "type": "Script",
+        "dependsOn": [
+          {
+            "activity": "FE_INGEST_TABLES",
+            "dependencyConditions": [
+              "Failed"
+            ]
+          }
+        ],
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureOutput": false,
+          "secureInput": false
+        },
+        "connectionSettings": {
+          "name": "52b9401d_3e6c_433e_9164_ffaa15095659",
+          "properties": {
+            "annotations": [],
+            "type": "DataWarehouse",
+            "typeProperties": {
+              "endpoint": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouseSqlEndpoint",
+              "artifactId": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouse.itemId",
+              "workspaceId": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouse.workspaceId"
+            },
+            "externalReferences": {
+              "connection": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouseConnectionId"
+            }
+          }
+        },
+        "typeProperties": {
+          "scripts": [
+            {
+              "type": "NonQuery",
+              "text": {
+                "value": "@concat(\n'UPDATE audit.PipelineRun\n SET\n     EndTime = SYSUTCDATETIME(),\n     Status = ''FAILED'',\n     ErrorActivity = ''FE_INGEST_TABLES'',\n     ErrorMessage = ''One or more ingestion activities failed. Check audit.TableRun or Fabric run history for the detailed entity error.''\n WHERE PipelineRunId = ''',\npipeline().RunId,\n''';'\n)",
+                "type": "Expression"
+              }
+            }
+          ],
+          "scriptBlockExecutionTimeout": "02:00:00"
+        }
+      },
+      {
+        "name": "LKP_FAILED_TABLE_COUNT",
+        "type": "Lookup",
+        "dependsOn": [
+          {
+            "activity": "FE_INGEST_TABLES",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ],
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureOutput": false,
+          "secureInput": false
+        },
+        "typeProperties": {
+          "source": {
+            "type": "DataWarehouseSource",
+            "sqlReaderQuery": {
+              "value": "@concat(\n'SELECT COUNT_BIG(*) AS FailedTableCount\n FROM audit.TableRun\n WHERE PipelineRunId = ''',\npipeline().RunId,\n'''\n AND Status = ''FAILED'';'\n)",
+              "type": "Expression"
+            },
+            "queryTimeout": "02:00:00",
+            "partitionOption": "None"
+          },
+          "datasetSettings": {
+            "annotations": [],
+            "connectionSettings": {
+              "name": "9ac14f81_adec_46e0_94a6_830202ceb7ce",
+              "properties": {
+                "annotations": [],
+                "type": "DataWarehouse",
+                "typeProperties": {
+                  "endpoint": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouseSqlEndpoint",
+                  "artifactId": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouse.itemId",
+                  "workspaceId": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouse.workspaceId"
+                },
+                "externalReferences": {
+                  "connection": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouseConnectionId"
+                }
+              }
+            },
+            "type": "DataWarehouseTable",
+            "schema": [],
+            "typeProperties": {}
+          }
+        }
+      },
+      {
+        "name": "IF_ANY_TABLE_FAILED",
+        "type": "IfCondition",
+        "dependsOn": [
+          {
+            "activity": "LKP_FAILED_TABLE_COUNT",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ],
+        "typeProperties": {
+          "expression": {
+            "value": "@greater(\n    int(activity('LKP_FAILED_TABLE_COUNT').output.firstRow.FailedTableCount),\n    0\n)",
+            "type": "Expression"
+          },
+          "ifFalseActivities": [
+            {
+              "name": "SCR_LOG_PIPELINE_SUCCESS",
+              "type": "Script",
+              "dependsOn": [],
+              "policy": {
+                "timeout": "0.12:00:00",
+                "retry": 0,
+                "retryIntervalInSeconds": 30,
+                "secureOutput": false,
+                "secureInput": false
+              },
+              "connectionSettings": {
+                "name": "3ccab835_ea31_4e94_ab48_4251e028db81",
+                "properties": {
+                  "annotations": [],
+                  "type": "DataWarehouse",
+                  "typeProperties": {
+                    "endpoint": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouseSqlEndpoint",
+                    "artifactId": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouse.itemId",
+                    "workspaceId": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouse.workspaceId"
+                  },
+                  "externalReferences": {
+                    "connection": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouseConnectionId"
+                  }
+                }
+              },
+              "typeProperties": {
+                "scripts": [
+                  {
+                    "type": "NonQuery",
+                    "text": {
+                      "value": "@concat(\n'UPDATE audit.PipelineRun\n SET\n     EndTime = SYSUTCDATETIME(),\n     Status = ''SUCCESS'',\n     ErrorActivity = NULL,\n     ErrorMessage = NULL\n WHERE PipelineRunId = ''',\npipeline().RunId,\n''';'\n)",
+                      "type": "Expression"
+                    }
+                  }
+                ],
+                "scriptBlockExecutionTimeout": "02:00:00"
+              }
+            }
+          ],
+          "ifTrueActivities": [
+            {
+              "name": "SCR_LOG_PIPELINE_FAILED_TABLES",
+              "type": "Script",
+              "dependsOn": [],
+              "policy": {
+                "timeout": "0.12:00:00",
+                "retry": 0,
+                "retryIntervalInSeconds": 30,
+                "secureOutput": false,
+                "secureInput": false
+              },
+              "connectionSettings": {
+                "name": "68554af9_31f3_45a7_b2e6_4757e971cd6e",
+                "properties": {
+                  "annotations": [],
+                  "type": "DataWarehouse",
+                  "typeProperties": {
+                    "endpoint": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouseSqlEndpoint",
+                    "artifactId": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouse.itemId",
+                    "workspaceId": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouse.workspaceId"
+                  },
+                  "externalReferences": {
+                    "connection": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouseConnectionId"
+                  }
+                }
+              },
+              "typeProperties": {
+                "scripts": [
+                  {
+                    "type": "NonQuery",
+                    "text": {
+                      "value": "@concat(\n'UPDATE audit.PipelineRun\n SET\n     EndTime = SYSUTCDATETIME(),\n     Status = ''FAILED'',\n     ErrorActivity = ''FE_INGEST_TABLES'',\n     ErrorMessage = ''One or more entities failed. Check audit.TableRun for details.''\n WHERE PipelineRunId = ''',\npipeline().RunId,\n''';'\n)",
+                      "type": "Expression"
+                    }
+                  }
+                ],
+                "scriptBlockExecutionTimeout": "02:00:00"
+              }
+            },
+            {
+              "name": "FAIL_PIPELINE",
+              "type": "Fail",
+              "dependsOn": [
+                {
+                  "activity": "SCR_LOG_PIPELINE_FAILED_TABLES",
+                  "dependencyConditions": [
+                    "Succeeded"
+                  ]
+                }
+              ],
+              "typeProperties": {
+                "message": "One or more entities failed. Check audit.TableRun for details.",
+                "errorCode": "PULSE_TABLE_FAILURE"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "name": "FAIL_PIPELINE_INGEST",
+        "type": "Fail",
+        "dependsOn": [
+          {
+            "activity": "SCR_LOG_PIPELINE_FAILED_INGEST",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ],
+        "typeProperties": {
+          "message": "Ingestion processing failed. Check audit.TableRun and Fabric run history.",
+          "errorCode": "PULSE_INGEST_FAILED"
+        }
+      },
+      {
+        "name": "SCR_LOG_PIPELINE_FAILED_LOOKUP",
+        "type": "Script",
+        "dependsOn": [
+          {
+            "activity": "LKP_ACTIVE_ENTITIES",
+            "dependencyConditions": [
+              "Failed"
+            ]
+          }
+        ],
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureOutput": false,
+          "secureInput": false
+        },
+        "connectionSettings": {
+          "name": "68e77432_4c01_4a55_a782_461aa139bc83",
+          "properties": {
+            "annotations": [],
+            "type": "DataWarehouse",
+            "typeProperties": {
+              "endpoint": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouseSqlEndpoint",
+              "artifactId": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouse.itemId",
+              "workspaceId": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouse.workspaceId"
+            },
+            "externalReferences": {
+              "connection": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouseConnectionId"
+            }
+          }
+        },
+        "typeProperties": {
+          "scripts": [
+            {
+              "type": "NonQuery",
+              "text": {
+                "value": "@concat(\n'UPDATE audit.PipelineRun\n SET\n     EndTime = SYSUTCDATETIME(),\n     Status = ''FAILED'',\n     ErrorActivity = ''LKP_ACTIVE_ENTITIES'',\n     ErrorMessage = ''',\nreplace(\n    activity('LKP_ACTIVE_ENTITIES').error.message,\n    '''',\n    ''''''\n),\n'''\n WHERE PipelineRunId = ''',\npipeline().RunId,\n''';'\n)",
+                "type": "Expression"
+              }
+            }
+          ],
+          "scriptBlockExecutionTimeout": "02:00:00"
+        }
+      },
+      {
+        "name": "FAIL_PIPELINE_METADATA",
+        "type": "Fail",
+        "dependsOn": [
+          {
+            "activity": "SCR_LOG_PIPELINE_FAILED_LOOKUP",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ],
+        "typeProperties": {
+          "message": "PULSE_METADATA_LOOKUP_FAILED",
+          "errorCode": "PULSE_METADATA_LOOKUP_FAILED"
+        }
+      }
+    ],
+    "libraryVariables": {
+      "VL_PULSE_CONFIG_ControlWarehouse": {
+        "type": "Object",
+        "variableName": "ControlWarehouse",
+        "libraryName": "VL_PULSE_CONFIG"
+      },
+      "VL_PULSE_CONFIG_ControlWarehouseConnectionId": {
+        "type": "String",
+        "variableName": "ControlWarehouseConnectionId",
+        "libraryName": "VL_PULSE_CONFIG"
+      },
+      "VL_PULSE_CONFIG_ControlWarehouseSqlEndpoint": {
+        "type": "String",
+        "variableName": "ControlWarehouseSqlEndpoint",
+        "libraryName": "VL_PULSE_CONFIG"
+      },
+      "VL_PULSE_CONFIG_SourceConnection": {
+        "type": "String",
+        "variableName": "SourceConnection",
+        "libraryName": "VL_PULSE_CONFIG"
+      },
+      "VL_PULSE_CONFIG_BronzeLakehouse": {
+        "type": "Object",
+        "variableName": "BronzeLakehouse",
+        "libraryName": "VL_PULSE_CONFIG"
+      },
+      "VL_PULSE_CONFIG_BronzeLakehouseConnectionId": {
+        "type": "String",
+        "variableName": "BronzeLakehouseConnectionId",
+        "libraryName": "VL_PULSE_CONFIG"
+      },
+      "VL_PULSE_CONFIG_EnvironmentName": {
+        "type": "String",
+        "variableName": "EnvironmentName",
+        "libraryName": "VL_PULSE_CONFIG"
+      },
+      "VL_PULSE_CONFIG_BronzeSqlEndpointId": {
+        "type": "String",
+        "variableName": "BronzeSqlEndpointId",
+        "libraryName": "VL_PULSE_CONFIG"
+      },
+      "VL_PULSE_CONFIG_BronzeWorkspaceId": {
+        "type": "String",
+        "variableName": "BronzeWorkspaceId",
+        "libraryName": "VL_PULSE_CONFIG"
+      },
+      "VL_PULSE_CONFIG_CON_FABRIC_API_DEV": {
+        "type": "String",
+        "variableName": "CON_FABRIC_API_DEV",
+        "libraryName": "VL_PULSE_CONFIG"
+      }
+    }
   }
 }
