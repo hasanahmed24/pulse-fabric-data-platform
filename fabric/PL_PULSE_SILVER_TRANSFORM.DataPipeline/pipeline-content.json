@@ -1,0 +1,591 @@
+{
+  "properties": {
+    "activities": [
+      {
+        "type": "Lookup",
+        "typeProperties": {
+          "source": {
+            "type": "DataWarehouseSource",
+            "sqlReaderQuery": "SELECT\n    EntityName,\n    SourceSchema,\n    SourceTable,\n    TargetSchema,\n    TargetTable,\n    LoadType,\n    WriteStrategy,\n    WatermarkColumn,\n    MergeKeyColumns,\n    DedupKeyColumns,\n    TransformProfile,\n    QuarantineSchema,\n    QuarantineTable,\n    MaxRejectPct,\n    LoadOrder\nFROM ctl.SilverConfig\nWHERE IsActive = 1\nORDER BY LoadOrder;",
+            "partitionOption": "None",
+            "queryTimeout": "02:00:00"
+          },
+          "datasetSettings": {
+            "type": "DataWarehouseTable",
+            "schema": [],
+            "connectionSettings": {
+              "name": "7c39c489_082f_4b2c_a1fd_2798e23ad3a5",
+              "properties": {
+                "type": "DataWarehouse",
+                "typeProperties": {
+                  "artifactId": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouse.itemId",
+                  "endpoint": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouseSqlEndpoint",
+                  "workspaceId": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouse.workspaceId"
+                },
+                "externalReferences": {
+                  "connection": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouseConnectionId"
+                },
+                "annotations": []
+              }
+            },
+            "annotations": []
+          },
+          "firstRowOnly": false
+        },
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "LKP_ACTIVE_SILVER_ENTITIES",
+        "dependsOn": []
+      },
+      {
+        "type": "ForEach",
+        "typeProperties": {
+          "isSequential": true,
+          "items": {
+            "value": "@activity('LKP_ACTIVE_SILVER_ENTITIES').output.value",
+            "type": "Expression"
+          },
+          "activities": [
+            {
+              "type": "Lookup",
+              "typeProperties": {
+                "source": {
+                  "type": "DataWarehouseSource",
+                  "sqlReaderQuery": {
+                    "value": "@concat(\n'SELECT\n    RuleCode,\n    RuleName,\n    RuleExpression,\n    Severity,\n    Action,\n    ExecutionTier,\n    IsActive\n FROM ctl.SilverDQRule\n WHERE EntityName = ''',\nitem().EntityName,\n'''\n AND IsActive = 1\n AND ExecutionTier = ''INLINE''\n ORDER BY RuleOrder'\n)",
+                    "type": "Expression"
+                  },
+                  "partitionOption": "None",
+                  "queryTimeout": "02:00:00"
+                },
+                "datasetSettings": {
+                  "type": "DataWarehouseTable",
+                  "schema": [],
+                  "connectionSettings": {
+                    "name": "e9a13d04_3a1b_4510_95d8_2e7dd83d32cd",
+                    "properties": {
+                      "type": "DataWarehouse",
+                      "typeProperties": {
+                        "artifactId": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouse.itemId",
+                        "endpoint": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouseSqlEndpoint",
+                        "workspaceId": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouse.workspaceId"
+                      },
+                      "externalReferences": {
+                        "connection": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouseConnectionId"
+                      },
+                      "annotations": []
+                    }
+                  },
+                  "annotations": []
+                },
+                "firstRowOnly": false
+              },
+              "policy": {
+                "timeout": "0.12:00:00",
+                "retry": 0,
+                "retryIntervalInSeconds": 30,
+                "secureInput": false,
+                "secureOutput": false
+              },
+              "name": "LKP_DQ_RULES",
+              "dependsOn": []
+            },
+            {
+              "type": "IfCondition",
+              "typeProperties": {
+                "expression": {
+                  "value": "@equals(toUpper(item().LoadType),'INCREMENTAL')",
+                  "type": "Expression"
+                },
+                "ifTrueActivities": [
+                  {
+                    "type": "Lookup",
+                    "typeProperties": {
+                      "source": {
+                        "type": "DataWarehouseSource",
+                        "sqlReaderQuery": "@concat(\n'SELECT\n    COALESCE(LastSuccessfulWatermark, ''0'') AS LastSuccessfulWatermark\n FROM ctl.SilverWatermark\n WHERE EntityName = ''',\nitem().EntityName,\n''''\n)",
+                        "partitionOption": "None",
+                        "queryTimeout": "02:00:00"
+                      },
+                      "datasetSettings": {
+                        "type": "DataWarehouseTable",
+                        "schema": [],
+                        "connectionSettings": {
+                          "name": "69cbb58c_7ebd_4a6c_89bd_0f01873c1344",
+                          "properties": {
+                            "type": "DataWarehouse",
+                            "typeProperties": {
+                              "artifactId": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouse.itemId",
+                              "endpoint": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouseSqlEndpoint",
+                              "workspaceId": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouse.workspaceId"
+                            },
+                            "externalReferences": {
+                              "connection": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouseConnectionId"
+                            },
+                            "annotations": []
+                          }
+                        },
+                        "annotations": []
+                      },
+                      "firstRowOnly": true
+                    },
+                    "policy": {
+                      "timeout": "0.12:00:00",
+                      "retry": 0,
+                      "retryIntervalInSeconds": 30,
+                      "secureInput": false,
+                      "secureOutput": false
+                    },
+                    "name": "LKP_SILVER_WATERMARK",
+                    "dependsOn": []
+                  },
+                  {
+                    "type": "Lookup",
+                    "typeProperties": {
+                      "source": {
+                        "type": "LakehouseTableSource",
+                        "sqlReaderQuery": {
+                          "value": "@concat(\n'SELECT MAX(',\nitem().WatermarkColumn,\n') AS EndWatermark\nFROM ',\nitem().SourceSchema,\n'.',\nitem().SourceTable\n)",
+                          "type": "Expression"
+                        },
+                        "partitionOption": "None"
+                      },
+                      "datasetSettings": {
+                        "type": "LakehouseTable",
+                        "schema": [],
+                        "connectionSettings": {
+                          "name": "a300ebcd_4646_48d9_ad67_0fadef6817b4",
+                          "properties": {
+                            "type": "Lakehouse",
+                            "typeProperties": {
+                              "artifactId": "@pipeline().libraryVariables.VL_PULSE_CONFIG_BronzeLakehouse.itemId",
+                              "workspaceId": "@pipeline().libraryVariables.VL_PULSE_CONFIG_BronzeLakehouse.workspaceId",
+                              "rootFolder": "Tables"
+                            },
+                            "externalReferences": {
+                              "connection": "@pipeline().libraryVariables.VL_PULSE_CONFIG_BronzeLakehouseConnectionId"
+                            },
+                            "annotations": []
+                          }
+                        },
+                        "annotations": []
+                      }
+                    },
+                    "policy": {
+                      "timeout": "0.12:00:00",
+                      "retry": 0,
+                      "retryIntervalInSeconds": 30,
+                      "secureInput": false,
+                      "secureOutput": false
+                    },
+                    "name": "LKP_BRONZE_HIGH_WATERMARK",
+                    "dependsOn": [
+                      {
+                        "activity": "LKP_SILVER_WATERMARK",
+                        "dependencyConditions": [
+                          "Succeeded"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "type": "TridentNotebook",
+                    "typeProperties": {
+                      "notebookId": "c0df8224-458e-bf66-46b8-fc784bf8bb3f",
+                      "workspaceId": "00000000-0000-0000-0000-000000000000",
+                      "parameters": {
+                        "RunId": {
+                          "value": {
+                            "value": "@pipeline().RunId",
+                            "type": "Expression"
+                          },
+                          "type": "string"
+                        },
+                        "EnvironmentName": {
+                          "value": {
+                            "value": "@pipeline().libraryVariables.VL_PULSE_CONFIG_EnvironmentName",
+                            "type": "Expression"
+                          },
+                          "type": "string"
+                        },
+                        "EntityName": {
+                          "value": {
+                            "value": "@item().EntityName",
+                            "type": "Expression"
+                          },
+                          "type": "string"
+                        },
+                        "SourceSchema": {
+                          "value": {
+                            "value": "@item().SourceSchema",
+                            "type": "Expression"
+                          },
+                          "type": "string"
+                        },
+                        "SourceTable": {
+                          "value": {
+                            "value": "@item().SourceTable",
+                            "type": "Expression"
+                          },
+                          "type": "string"
+                        },
+                        "TargetSchema": {
+                          "value": {
+                            "value": "@item().TargetSchema",
+                            "type": "Expression"
+                          },
+                          "type": "string"
+                        },
+                        "TargetTable": {
+                          "value": {
+                            "value": "@item().TargetTable",
+                            "type": "Expression"
+                          },
+                          "type": "string"
+                        },
+                        "LoadType": {
+                          "value": {
+                            "value": "@item().LoadType",
+                            "type": "Expression"
+                          },
+                          "type": "string"
+                        },
+                        "WriteStrategy": {
+                          "value": {
+                            "value": "@item().WriteStrategy",
+                            "type": "Expression"
+                          },
+                          "type": "string"
+                        },
+                        "WatermarkColumn": {
+                          "value": {
+                            "value": "@item().WatermarkColumn",
+                            "type": "Expression"
+                          },
+                          "type": "string"
+                        },
+                        "StartWatermark": {
+                          "value": {
+                            "value": "@string(activity('LKP_SILVER_WATERMARK').output.firstRow.LastSuccessfulWatermark)",
+                            "type": "Expression"
+                          },
+                          "type": "string"
+                        },
+                        "EndWatermark": {
+                          "value": {
+                            "value": "@string(activity('LKP_BRONZE_HIGH_WATERMARK').output.firstRow.EndWatermark)",
+                            "type": "Expression"
+                          },
+                          "type": "string"
+                        },
+                        "MergeKeyColumns": {
+                          "value": {
+                            "value": "@item().MergeKeyColumns",
+                            "type": "Expression"
+                          },
+                          "type": "string"
+                        },
+                        "DedupKeyColumns": {
+                          "value": {
+                            "value": "@item().DedupKeyColumns",
+                            "type": "Expression"
+                          },
+                          "type": "string"
+                        },
+                        "TransformProfile": {
+                          "value": {
+                            "value": "@item().TransformProfile",
+                            "type": "Expression"
+                          },
+                          "type": "string"
+                        },
+                        "QuarantineSchema": {
+                          "value": {
+                            "value": "@item().QuarantineSchema",
+                            "type": "Expression"
+                          },
+                          "type": "string"
+                        },
+                        "QuarantineTable": {
+                          "value": {
+                            "value": "@item().QuarantineTable",
+                            "type": "Expression"
+                          },
+                          "type": "string"
+                        },
+                        "MaxRejectPct": {
+                          "value": {
+                            "value": "@string(item().MaxRejectPct)",
+                            "type": "Expression"
+                          },
+                          "type": "float"
+                        },
+                        "DQRulesJson": {
+                          "value": {
+                            "value": "@string(activity('LKP_DQ_RULES').output.value)",
+                            "type": "Expression"
+                          },
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "externalReferences": {
+                      "connection": "@pipeline().libraryVariables.VL_PULSE_CONFIG_NotebookConnectionId"
+                    },
+                    "policy": {
+                      "timeout": "0.12:00:00",
+                      "retry": 0,
+                      "retryIntervalInSeconds": 30,
+                      "secureInput": false,
+                      "secureOutput": false
+                    },
+                    "name": "NB_PROCESS_INCREMENTAL",
+                    "dependsOn": [
+                      {
+                        "activity": "LKP_BRONZE_HIGH_WATERMARK",
+                        "dependencyConditions": [
+                          "Succeeded"
+                        ]
+                      }
+                    ]
+                  }
+                ],
+                "ifFalseActivities": [
+                  {
+                    "type": "TridentNotebook",
+                    "typeProperties": {
+                      "notebookId": "c0df8224-458e-bf66-46b8-fc784bf8bb3f",
+                      "workspaceId": "00000000-0000-0000-0000-000000000000",
+                      "parameters": {
+                        "RunId": {
+                          "value": {
+                            "value": "@pipeline().RunId",
+                            "type": "Expression"
+                          },
+                          "type": "string"
+                        },
+                        "EnvironmentName": {
+                          "value": {
+                            "value": "@pipeline().libraryVariables.VL_PULSE_CONFIG_EnvironmentName",
+                            "type": "Expression"
+                          },
+                          "type": "string"
+                        },
+                        "EntityName": {
+                          "value": {
+                            "value": "@item().EntityName",
+                            "type": "Expression"
+                          },
+                          "type": "string"
+                        },
+                        "SourceSchema": {
+                          "value": {
+                            "value": "@item().SourceSchema",
+                            "type": "Expression"
+                          },
+                          "type": "string"
+                        },
+                        "SourceTable": {
+                          "value": {
+                            "value": "@item().SourceTable",
+                            "type": "Expression"
+                          },
+                          "type": "string"
+                        },
+                        "TargetSchema": {
+                          "value": {
+                            "value": "@item().TargetSchema",
+                            "type": "Expression"
+                          },
+                          "type": "string"
+                        },
+                        "TargetTable": {
+                          "value": {
+                            "value": "@item().TargetTable",
+                            "type": "Expression"
+                          },
+                          "type": "string"
+                        },
+                        "LoadType": {
+                          "value": {
+                            "value": "@item().LoadType",
+                            "type": "Expression"
+                          },
+                          "type": "string"
+                        },
+                        "WriteStrategy": {
+                          "value": {
+                            "value": "@item().WriteStrategy",
+                            "type": "Expression"
+                          },
+                          "type": "string"
+                        },
+                        "WatermarkColumn": {
+                          "value": {
+                            "value": "\"\"",
+                            "type": "Expression"
+                          },
+                          "type": "string"
+                        },
+                        "StartWatermark": {
+                          "value": {
+                            "value": "\"0\"",
+                            "type": "Expression"
+                          },
+                          "type": "string"
+                        },
+                        "EndWatermark": {
+                          "value": {
+                            "value": "\"0\"",
+                            "type": "Expression"
+                          },
+                          "type": "string"
+                        },
+                        "MergeKeyColumns": {
+                          "value": {
+                            "value": "@item().MergeKeyColumns",
+                            "type": "Expression"
+                          },
+                          "type": "string"
+                        },
+                        "DedupKeyColumns": {
+                          "value": {
+                            "value": "@item().DedupKeyColumns",
+                            "type": "Expression"
+                          },
+                          "type": "string"
+                        },
+                        "TransformProfile": {
+                          "value": {
+                            "value": "@item().TransformProfile",
+                            "type": "Expression"
+                          },
+                          "type": "string"
+                        },
+                        "QuarantineSchema": {
+                          "value": {
+                            "value": "@item().QuarantineSchema",
+                            "type": "Expression"
+                          },
+                          "type": "string"
+                        },
+                        "QuarantineTable": {
+                          "value": {
+                            "value": "@item().QuarantineTable",
+                            "type": "Expression"
+                          },
+                          "type": "string"
+                        },
+                        "MaxRejectPct": {
+                          "value": {
+                            "value": "@string(item().MaxRejectPct)",
+                            "type": "Expression"
+                          },
+                          "type": "float"
+                        },
+                        "DQRulesJson": {
+                          "value": {
+                            "value": "@string(activity('LKP_DQ_RULES').output.value)",
+                            "type": "Expression"
+                          },
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "externalReferences": {
+                      "connection": "@pipeline().libraryVariables.VL_PULSE_CONFIG_NotebookConnectionId"
+                    },
+                    "policy": {
+                      "timeout": "0.12:00:00",
+                      "retry": 0,
+                      "retryIntervalInSeconds": 30,
+                      "secureInput": false,
+                      "secureOutput": false
+                    },
+                    "name": "NB_PROCESS_FULL",
+                    "dependsOn": []
+                  }
+                ]
+              },
+              "name": "IF_INCREMENTAL",
+              "dependsOn": [
+                {
+                  "activity": "LKP_DQ_RULES",
+                  "dependencyConditions": [
+                    "Succeeded"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "name": "FE_PROCESS_SILVER_ENTITIES",
+        "dependsOn": [
+          {
+            "activity": "LKP_ACTIVE_SILVER_ENTITIES",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ]
+      }
+    ],
+    "libraryVariables": {
+      "VL_PULSE_CONFIG_ControlWarehouse": {
+        "type": "Object",
+        "variableName": "ControlWarehouse",
+        "libraryName": "VL_PULSE_CONFIG"
+      },
+      "VL_PULSE_CONFIG_ControlWarehouseConnectionId": {
+        "type": "String",
+        "variableName": "ControlWarehouseConnectionId",
+        "libraryName": "VL_PULSE_CONFIG"
+      },
+      "VL_PULSE_CONFIG_ControlWarehouseSqlEndpoint": {
+        "type": "String",
+        "variableName": "ControlWarehouseSqlEndpoint",
+        "libraryName": "VL_PULSE_CONFIG"
+      },
+      "VL_PULSE_CONFIG_BronzeLakehouse": {
+        "type": "Object",
+        "variableName": "BronzeLakehouse",
+        "libraryName": "VL_PULSE_CONFIG"
+      },
+      "VL_PULSE_CONFIG_BronzeLakehouseConnectionId": {
+        "type": "String",
+        "variableName": "BronzeLakehouseConnectionId",
+        "libraryName": "VL_PULSE_CONFIG"
+      },
+      "VL_PULSE_CONFIG_BronzeWorkspaceId": {
+        "type": "String",
+        "variableName": "BronzeWorkspaceId",
+        "libraryName": "VL_PULSE_CONFIG"
+      },
+      "VL_PULSE_CONFIG_BronzeSqlEndpointId": {
+        "type": "String",
+        "variableName": "BronzeSqlEndpointId",
+        "libraryName": "VL_PULSE_CONFIG"
+      },
+      "VL_PULSE_CONFIG_SilverLakehouse": {
+        "type": "Object",
+        "variableName": "SilverLakehouse",
+        "libraryName": "VL_PULSE_CONFIG"
+      },
+      "VL_PULSE_CONFIG_EnvironmentName": {
+        "type": "String",
+        "variableName": "EnvironmentName",
+        "libraryName": "VL_PULSE_CONFIG"
+      },
+      "VL_PULSE_CONFIG_NotebookConnectionId": {
+        "type": "String",
+        "variableName": "NotebookConnectionId",
+        "libraryName": "VL_PULSE_CONFIG"
+      }
+    }
+  }
+}

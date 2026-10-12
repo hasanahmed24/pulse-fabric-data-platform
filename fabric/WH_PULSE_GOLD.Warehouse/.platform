@@ -1,0 +1,12 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "metadata": {
+    "type": "Warehouse",
+    "displayName": "WH_PULSE_GOLD",
+    "description": ""
+  },
+  "config": {
+    "version": "2.0",
+    "logicalId": "3d0e90f1-2a24-8990-4265-cfe19123fdbe"
+  }
+}

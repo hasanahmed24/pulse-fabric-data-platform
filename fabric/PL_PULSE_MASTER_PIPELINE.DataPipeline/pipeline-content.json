@@ -1,0 +1,93 @@
+{
+  "properties": {
+    "activities": [
+      {
+        "type": "InvokePipeline",
+        "typeProperties": {
+          "parameters": {},
+          "waitOnCompletion": true,
+          "workspaceId": "00000000-0000-0000-0000-000000000000",
+          "pipelineId": "17ffafdb-1515-be75-4806-b7fcefcb5a0d",
+          "operationType": "InvokeFabricPipeline"
+        },
+        "externalReferences": {
+          "connection": "@pipeline().libraryVariables.VL_PULSE_CONFIG_InvokePipelineConnectionId"
+        },
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "INV_BRONZE_INGEST",
+        "dependsOn": []
+      },
+      {
+        "type": "InvokePipeline",
+        "typeProperties": {
+          "parameters": {},
+          "waitOnCompletion": true,
+          "workspaceId": "00000000-0000-0000-0000-000000000000",
+          "pipelineId": "98f28735-b733-b167-4b7c-8fa35618867e",
+          "operationType": "InvokeFabricPipeline"
+        },
+        "externalReferences": {
+          "connection": "@pipeline().libraryVariables.VL_PULSE_CONFIG_InvokePipelineConnectionId"
+        },
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "INV_SILVER_TRANSFORM",
+        "dependsOn": [
+          {
+            "activity": "INV_BRONZE_INGEST",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ]
+      },
+      {
+        "type": "InvokePipeline",
+        "typeProperties": {
+          "parameters": {},
+          "waitOnCompletion": true,
+          "workspaceId": "00000000-0000-0000-0000-000000000000",
+          "pipelineId": "112ef117-d300-a400-4a6f-db14259539d4",
+          "operationType": "InvokeFabricPipeline"
+        },
+        "externalReferences": {
+          "connection": "@pipeline().libraryVariables.VL_PULSE_CONFIG_InvokePipelineConnectionId"
+        },
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "INV_GOLD_LOAD",
+        "dependsOn": [
+          {
+            "activity": "INV_SILVER_TRANSFORM",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ]
+      }
+    ],
+    "libraryVariables": {
+      "VL_PULSE_CONFIG_InvokePipelineConnectionId": {
+        "type": "String",
+        "variableName": "InvokePipelineConnectionId",
+        "libraryName": "VL_PULSE_CONFIG"
+      }
+    }
+  }
+}

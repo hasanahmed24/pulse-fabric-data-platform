@@ -1,0 +1,11 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "metadata": {
+    "type": "DataPipeline",
+    "displayName": "PL_PULSE_SILVER_TRANSFORM"
+  },
+  "config": {
+    "version": "2.0",
+    "logicalId": "98f28735-b733-b167-4b7c-8fa35618867e"
+  }
+}

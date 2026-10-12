@@ -1,0 +1,179 @@
+{
+  "properties": {
+    "activities": [
+      {
+        "name": "SCR_LOAD_GOLD",
+        "type": "Script",
+        "dependsOn": [],
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureOutput": false,
+          "secureInput": false
+        },
+        "connectionSettings": {
+          "name": "4a8729e9_749b_4aa6_b241_1a55a7430c0e",
+          "properties": {
+            "annotations": [],
+            "type": "DataWarehouse",
+            "typeProperties": {
+              "endpoint": "@pipeline().libraryVariables.VL_PULSE_CONFIG_GoldWarehouseSqlEndpoint",
+              "artifactId": "@pipeline().libraryVariables.VL_PULSE_CONFIG_GoldWarehouse.itemId",
+              "workspaceId": "@pipeline().libraryVariables.VL_PULSE_CONFIG_GoldWarehouse.workspaceId"
+            },
+            "externalReferences": {
+              "connection": "@pipeline().libraryVariables.VL_PULSE_CONFIG_GoldWarehouseConnectionId"
+            }
+          }
+        },
+        "typeProperties": {
+          "scripts": [
+            {
+              "type": "Query",
+              "text": {
+                "value": "/* PERSON DIMENSION */\nTRUNCATE TABLE gold.DimPerson;\n\nINSERT INTO gold.DimPerson\n(\n    PersonID,\n    BankAccountNumber,\n    BankID,\n    PersonAge,\n    PersonEducation,\n    PersonGender,\n    PersonMaritalStatus,\n    PersonOccupation,\n    GoldLoadedAt\n)\nSELECT\n    PersonID,\n    BankAccountNumber,\n    BankID,\n    PersonAge,\n    PersonEducation,\n    PersonGender,\n    PersonMaritalStatus,\n    PersonOccupation,\n    SYSUTCDATETIME()\nFROM [LH_PULSE_SILVER].[silver].[person];\n\n\n/* MERCHANT DIMENSION */\nTRUNCATE TABLE gold.DimMerchant;\n\nINSERT INTO gold.DimMerchant\n(\n    MerchantRecordID,\n    MerchantID,\n    BankAccountNumber,\n    BankID,\n    Description,\n    MerchantType,\n    RegisteredCapital,\n    Industry,\n    OperatingStatus,\n    EstablishmentDate,\n    LegalRepresentativeID,\n    GoldLoadedAt\n)\nSELECT\n    MerchantRecordID,\n    MerchantID,\n    BankAccountNumber,\n    BankID,\n    Description,\n    MerchantType,\n    RegisteredCapital,\n    Industry,\n    OperatingStatus,\n    EstablishmentDate,\n    LegalRepresentativeID,\n    SYSUTCDATETIME()\nFROM [LH_PULSE_SILVER].[silver].[merchant];\n\n\n/* HISTORICAL TRANSACTION FACT */\nINSERT INTO gold.FactTransaction\n(\n    TransactionID,\n    TransactionTimestamp,\n    TransactionDate,\n    FromBankID,\n    FromAccount,\n    ToBankID,\n    ToAccount,\n    AmountReceived,\n    ReceivingCurrency,\n    AmountPaid,\n    PaymentCurrency,\n    PaymentFormat,\n    IsLaundering,\n    GoldLoadedAt\n)\nSELECT\n    s.TransactionID,\n    s.TransactionTimestamp,\n    s.TransactionDate,\n    s.FromBankID,\n    s.FromAccount,\n    s.ToBankID,\n    s.ToAccount,\n    s.AmountReceived,\n    s.ReceivingCurrency,\n    s.AmountPaid,\n    s.PaymentCurrency,\n    s.PaymentFormat,\n    s.IsLaundering,\n    SYSUTCDATETIME()\nFROM [LH_PULSE_SILVER].[silver].[transaction_detail] s\nWHERE NOT EXISTS\n(\n    SELECT 1\n    FROM gold.FactTransaction g\n    WHERE g.TransactionID = s.TransactionID\n);",
+                "type": "Expression"
+              }
+            }
+          ],
+          "scriptBlockExecutionTimeout": "02:00:00"
+        }
+      },
+      {
+        "name": "LKP_GOLD_COUNTS",
+        "type": "Lookup",
+        "dependsOn": [
+          {
+            "activity": "SCR_LOAD_GOLD",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ],
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureOutput": false,
+          "secureInput": false
+        },
+        "typeProperties": {
+          "source": {
+            "type": "DataWarehouseSource",
+            "sqlReaderQuery": {
+              "value": "SELECT\n    (SELECT COUNT(*) FROM gold.DimPerson) AS PersonCount,\n    (SELECT COUNT(*) FROM gold.DimMerchant) AS MerchantCount,\n    (SELECT COUNT(*) FROM gold.FactTransaction) AS TransactionCount,\n    (\n        SELECT MAX(TransactionID)\n        FROM [LH_PULSE_SILVER].[silver].[transaction_detail]\n    ) AS EndWatermark;",
+              "type": "Expression"
+            },
+            "queryTimeout": "02:00:00",
+            "partitionOption": "None"
+          },
+          "datasetSettings": {
+            "annotations": [],
+            "connectionSettings": {
+              "name": "0a5f602e_4539_4e90_be53_8d6dcee670a7",
+              "properties": {
+                "annotations": [],
+                "type": "DataWarehouse",
+                "typeProperties": {
+                  "endpoint": "@pipeline().libraryVariables.VL_PULSE_CONFIG_GoldWarehouseSqlEndpoint",
+                  "artifactId": "@pipeline().libraryVariables.VL_PULSE_CONFIG_GoldWarehouse.itemId",
+                  "workspaceId": "@pipeline().libraryVariables.VL_PULSE_CONFIG_GoldWarehouse.workspaceId"
+                },
+                "externalReferences": {
+                  "connection": "@pipeline().libraryVariables.VL_PULSE_CONFIG_GoldWarehouseConnectionId"
+                }
+              }
+            },
+            "type": "DataWarehouseTable",
+            "schema": [],
+            "typeProperties": {}
+          }
+        }
+      },
+      {
+        "name": "SCR_COMMIT_TRANSACTION_WATERMARK",
+        "type": "Script",
+        "dependsOn": [
+          {
+            "activity": "LKP_GOLD_COUNTS",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ],
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureOutput": false,
+          "secureInput": false
+        },
+        "connectionSettings": {
+          "name": "ad57a94a_94a8_46ff_9abc_ce5a5249837d",
+          "properties": {
+            "annotations": [],
+            "type": "DataWarehouse",
+            "typeProperties": {
+              "endpoint": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouseSqlEndpoint",
+              "artifactId": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouse.itemId",
+              "workspaceId": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouse.workspaceId"
+            },
+            "externalReferences": {
+              "connection": "@pipeline().libraryVariables.VL_PULSE_CONFIG_ControlWarehouseConnectionId"
+            }
+          }
+        },
+        "typeProperties": {
+          "scripts": [
+            {
+              "type": "Query",
+              "text": {
+                "value": "@concat(\n'UPDATE ctl.SilverWatermark\n SET LastSuccessfulWatermark = ''',\nstring(activity('LKP_GOLD_COUNTS').output.firstRow.EndWatermark),\n''',\n LastSuccessfulRunId = ''',\npipeline().RunId,\n''',\n UpdatedAt = SYSUTCDATETIME()\n WHERE EntityName = ''TransactionDetail'';'\n)",
+                "type": "Expression"
+              }
+            }
+          ],
+          "scriptBlockExecutionTimeout": "02:00:00"
+        }
+      }
+    ],
+    "libraryVariables": {
+      "VL_PULSE_CONFIG_GoldWarehouseConnectionId": {
+        "type": "String",
+        "variableName": "GoldWarehouseConnectionId",
+        "libraryName": "VL_PULSE_CONFIG"
+      },
+      "VL_PULSE_CONFIG_ControlWarehouseConnectionId": {
+        "type": "String",
+        "variableName": "ControlWarehouseConnectionId",
+        "libraryName": "VL_PULSE_CONFIG"
+      },
+      "VL_PULSE_CONFIG_EnvironmentName": {
+        "type": "String",
+        "variableName": "EnvironmentName",
+        "libraryName": "VL_PULSE_CONFIG"
+      },
+      "VL_PULSE_CONFIG_GoldWarehouse": {
+        "type": "Object",
+        "variableName": "GoldWarehouse",
+        "libraryName": "VL_PULSE_CONFIG"
+      },
+      "VL_PULSE_CONFIG_GoldWarehouseSqlEndpoint": {
+        "type": "String",
+        "variableName": "GoldWarehouseSqlEndpoint",
+        "libraryName": "VL_PULSE_CONFIG"
+      },
+      "VL_PULSE_CONFIG_ControlWarehouse": {
+        "type": "Object",
+        "variableName": "ControlWarehouse",
+        "libraryName": "VL_PULSE_CONFIG"
+      },
+      "VL_PULSE_CONFIG_ControlWarehouseSqlEndpoint": {
+        "type": "String",
+        "variableName": "ControlWarehouseSqlEndpoint",
+        "libraryName": "VL_PULSE_CONFIG"
+      }
+    }
+  }
+}
